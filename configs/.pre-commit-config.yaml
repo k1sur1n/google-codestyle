@@ -1,0 +1,275 @@
+# =============================================================================
+# Профиль Google · .pre-commit-config.yaml
+# Данные актуальны на 2026-10-09. Скопируйте файл в корень репозитория.
+#
+# Статус: официального pre-commit-конфига «по Google» нет; файл есть у 6 из 24
+# измеренных открытых репозиториев Google (optax, flax, yapf, google-cloud-python,
+# jax, keras), и у 5 из них CI запускает `pre-commit run --all-files`. Состав
+# хуков ниже - сборка профиля (не Google) по правилам из docs/; инструменты,
+# названные самим Google: pyink, pylint с pylintrc, clang-format (пресет Google),
+# addlicense. Всё остальное - «не Google» (отмечено в комментариях).
+# pre-commit как инструмент - тоже не Google (MIT).
+#
+# Версии: pre-commit >= 3.2 (ключ default_install_hook_types); теги хуков
+# проверены `git ls-remote --tags` 2026-10-09, идентификаторы хуков - 
+# по .pre-commit-hooks.yaml в клонах репозиториев. Версии инструментов те же,
+# что в шапках configs/python/pyproject.toml и configs/cpp/.clang-format:
+#   pyink 26.5.1 · isort 9.0.2 · ruff 0.16.8 · mypy 2.3.1 · pylint 4.1.2
+#   clang-format 18.1.3 · addlicense v1.2.0 · nbstripout 0.9.1 · jupytext 1.19.6
+#   pre-commit-hooks v6.0.0 · gitleaks v8.30.1 · @commitlint/cli 21.2.3
+#
+# Не запускалось: реестр пакетов недоступен из среды сборки, сам pre-commit не
+# установлен. Проверено локально (2026-10-09): разбор YAML (PyYAML 6.0.3),
+# существование тегов, ключи хуков сверены со схемой pre-commit; ruff 0.16.8 и
+# mypy 2.3.1 проверены как CLI с конфигом профиля, не как хуки.
+#
+# Установка:
+#   pip install pre-commit
+#   pre-commit install            # ставит и pre-commit, и commit-msg
+#                                 # (см. default_install_hook_types)
+#   pre-commit run --all-files    # первый прогон по всему дереву
+# Правила: ../docs/enforcement.md (стадии), ../docs/adoption.md (внедрение).
+# =============================================================================
+
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+# Чужой код не форматируется и не линтуется (G-REPO-015); сгенерированные и
+# собранные файлы - тоже. Дополните под свой проект.
+exclude: |
+  (?x)^(
+    third_party/.*|
+    build/.*|
+    .*\.pb\.(h|cc)$
+  )$
+
+repos:
+  # ---------------------------------------------------------------------------
+  # Общая гигиена - pre-commit/pre-commit-hooks v6.0.0 (MIT, не Google).
+  # Те же хуки использует jax (там rev тоже v6.0.0).
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace        # G-PY-005, G-DOC-009 (docguide: перенос строки
+                                       # в Markdown - обратной косой чертой, не пробелами)
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files    # G-MLOPS-002, G-MLOPS-005; порог 500 КБ;
+        args: [--maxkb=500]            # файлы под Git LFS пропускаются
+      - id: detect-private-key         # G-MLOPS-004
+
+  # ---------------------------------------------------------------------------
+  # Секреты - gitleaks v8.30.1 (MIT, не Google). G-MLOPS-004, G-REPO-009.
+  # language: golang - pre-commit собирает бинарь из исходников (нужен Go и
+  # доступ к модулям); альтернативы в том же репозитории: gitleaks-system
+  # (готовый бинарь в PATH) и gitleaks-docker.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ---------------------------------------------------------------------------
+  # Заголовки лицензии - google/addlicense v1.2.0 (Apache-2.0, Google).
+  # G-REPO-010 … G-REPO-013. Замените <COPYRIGHT_HOLDER> на правообладателя
+  # (по умолчанию addlicense подставляет «Google LLC» - для вашего проекта это
+  # неверно). Хук правит файлы на месте; `-check` только проверяет.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/google/addlicense
+    rev: v1.2.0
+    hooks:
+      - id: addlicense
+        args: ["-c", "<COPYRIGHT_HOLDER>", "-l", "apache"]
+        exclude: ^third_party/
+
+  # ---------------------------------------------------------------------------
+  # Python - вариант A профиля (configs/python/pyproject.toml).
+  # ---------------------------------------------------------------------------
+  # Форматтер pyink 26.5.1 (Google). Настройки - [tool.pyink]. G-PY-001 … G-PY-010.
+  - repo: https://github.com/google/pyink
+    rev: 26.5.1                        # тег без префикса v
+    hooks:
+      - id: pyink
+  # Порядок импортов isort 9.0.2 (PyCQA, не Google). Настройки - [tool.isort]. G-PY-022.
+  - repo: https://github.com/PyCQA/isort
+    rev: 9.0.2                         # тег без префикса v
+    hooks:
+      - id: isort
+  # Дополняющий линтер ruff 0.16.8 (Astral, не Google). Настройки - [tool.ruff*].
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check               # прежнее имя хука - `ruff`
+      # - id: ruff-format            # только вариант B (вместо pyink и isort)
+  # Проверка типов mypy 2.3.1 (не Google; гайд называет pytype - архив с 2026-09-03).
+  # Настройки - [tool.mypy]. G-PY-042 … G-PY-045. Хук работает в изолированном
+  # окружении: стабы и плагины - через additional_dependencies
+  # (для Django - django-stubs, см. docs/frameworks/django.md).
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        # additional_dependencies: [django-stubs==6.1.2]
+  # Линтер гайда: pylint 4.1.2 с pylintrc из google/styleguide (G-PY-048).
+  # Файл pylintrc (Apache-2.0) в профиль не скопирован:
+  #   curl -fsSLO https://google.github.io/styleguide/pylintrc
+  # Хук из репозитория pylint работает без зависимостей проекта: Google pylintrc
+  # отключает import-error, no-member и no-name-in-module, поэтому отчёт не
+  # ломается, но проверки с выводом типов слабеют. Полный отчёт - в CI или через
+  # локальный хук (repo: local, language: system, entry: pylint …).
+  - repo: https://github.com/pylint-dev/pylint
+    rev: v4.1.2
+    hooks:
+      - id: pylint
+        args: [--rcfile=pylintrc, --disable=consider-using-f-string]
+
+  # ---------------------------------------------------------------------------
+  # C++ - clang-format 18.1.3 (LLVM, не Google; пресет Google назван в гайде).
+  # Та же версия, на которой проверен configs/cpp/.clang-format; файл должен
+  # лежать в корне (хук вызывает -style=file). Сужение types_or до [c++, c]
+  # обязательно: иначе зеркало форматирует и JSON, Java, JavaScript, proto.
+  # clang-tidy хуком не запускается - ему нужен compile_commands.json (CI).
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v18.1.3                       # последний тег зеркала - v23.1.3, не запускался
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+        exclude: ^third_party/
+  # Необязательно: cpplint 2.0.2 - форк сообщества, не Google (публичную версию
+  # Google не сопровождает с 2024-07-08). Не запускалось.
+  # - repo: https://github.com/cpplint/cpplint
+  #   rev: 2.0.2
+  #   hooks:
+  #     - id: cpplint
+  #       args: [--linelength=80, --filter=-legal/copyright]
+  #       exclude: ^third_party/
+
+  # ---------------------------------------------------------------------------
+  # Ноутбуки - nbstripout 0.9.1 и jupytext 1.19.6 (MIT, не Google; ими
+  # пользуются google/flax и jax-ml/jax). G-NB-001, G-NB-002, G-NB-009.
+  # Рабочие ноутбуки: выводы удаляются. Если документационных ноутбуков нет,
+  # достаточно первого хука без exclude.
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        exclude: ^docs/
+      # Документационные ноутбуки: выводы сохраняются, чистятся метаданные
+      # (список ключей - сокращённый список из конфига google/flax).
+      - id: nbstripout
+        name: nbstripout (docs, keep outputs)
+        files: ^docs/
+        args:
+          - --keep-output
+          - --keep-count
+          - --extra-keys
+          - "cell.metadata.executionInfo cell.metadata.id metadata.kernelspec metadata.vscode metadata.colab cell.metadata.colab"
+  # Документационные ноутбуки хранятся парой .ipynb + .md (как в jax).
+  - repo: https://github.com/mwouts/jupytext
+    rev: v1.19.6
+    hooks:
+      - id: jupytext
+        files: ^docs/
+        args: [--sync]
+
+  # ---------------------------------------------------------------------------
+  # Сообщения коммитов - commitlint 21.2.3 (MIT, не Google). Стадия commit-msg.
+  # Конфиг commitlint.config.mjs (вариант A - предложение без префикса, 72
+  # символа; вариант B - Conventional Commits) - в docs/git/commits.md.
+  # G-GIT-003, G-GIT-004, G-GIT-005, G-GIT-007, G-GIT-013. При установке хук
+  # скачивает пакеты из npm. Не запускалось.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: commitlint
+        name: commitlint (сообщение коммита, не Google)
+        entry: commitlint --edit
+        language: node
+        additional_dependencies:
+          - "@commitlint/cli@21.2.3"
+          # нужен только для варианта B (Conventional Commits):
+          - "@commitlint/config-conventional@21.2.3"
+        stages: [commit-msg]           # pre-commit передаёт хуку путь к файлу сообщения
+        always_run: true
+
+  # ---------------------------------------------------------------------------
+  # Фронтенд (TypeScript, Angular, React, CSS) - локальные хуки, не Google.
+  # Предполагают выполненный `npm ci` в корне фронтенд-проекта; конфиги - 
+  # configs/web/. Раскомментируйте в проекте с фронтендом. G-TS-003, G-NG-*,
+  # G-REACT-*, G-CSS-*.
+  # ---------------------------------------------------------------------------
+  # - repo: local
+  #   hooks:
+  #     - id: web-prettier
+  #       name: prettier (web)
+  #       entry: npx prettier --check
+  #       language: system
+  #       files: \.(ts|tsx|js|mjs|cjs|json|html|css)$
+  #     - id: web-eslint
+  #       name: eslint (web)
+  #       entry: npx eslint
+  #       language: system
+  #       files: \.(ts|tsx|html)$
+  #     - id: web-stylelint
+  #       name: stylelint (web)
+  #       entry: npx stylelint
+  #       language: system
+  #       files: \.css$
+
+  # ---------------------------------------------------------------------------
+  # Дополнительные языки - раскомментируйте нужное (docs/languages/other.md).
+  # Пути к jar-файлам (tools/…) - заглушки. Не запускалось, кроме gofmt.
+  # ---------------------------------------------------------------------------
+  # Go: golangci-lint v2.14.0 (не Google); language: golang - сборка из исходников.
+  # - repo: https://github.com/golangci/golangci-lint
+  #   rev: v2.14.0
+  #   hooks:
+  #     - id: golangci-lint-config-verify
+  #     - id: golangci-lint
+  # - repo: local
+  #   hooks:
+  #     - id: gofmt
+  #       name: gofmt (G-GO-001)
+  #       entry: bash -c 'out="$(gofmt -l "$@")"; test -z "$out" || { echo "$out"; exit 1; }' --
+  #       language: system
+  #       files: '\.go$'
+  #     - id: google-java-format
+  #       name: google-java-format 1.37.0 (G-JAVA-001..004)
+  #       entry: java -jar tools/google-java-format-1.37.0-all-deps.jar --dry-run --set-exit-if-changed
+  #       language: system
+  #       files: '\.java$'
+  #     - id: ktfmt
+  #       name: ktfmt 0.64 --kotlinlang-style (G-KT-001..003; не Google)
+  #       entry: java -jar tools/ktfmt-0.64-with-dependencies.jar --kotlinlang-style --dry-run --set-exit-if-changed
+  #       language: system
+  #       files: '\.kts?$'
+  #     - id: cargo-fmt
+  #       name: cargo fmt (G-RS-001; не Google)
+  #       entry: cargo fmt --all -- --check
+  #       language: system
+  #       files: '\.rs$'
+  #       pass_filenames: false
+  #     - id: dotnet-format
+  #       name: dotnet format (G-CS-001..007; не Google)
+  #       entry: dotnet format --verify-no-changes
+  #       language: system
+  #       files: '\.cs$'
+  #       pass_filenames: false
+  #     - id: php-cs-fixer
+  #       name: PHP-CS-Fixer @PER-CS (G-PHP-001..005; не Google)
+  #       entry: vendor/bin/php-cs-fixer check --rules=@PER-CS --diff .
+  #       language: system
+  #       files: '\.php$'
+  #       pass_filenames: false
+  #     - id: rubocop
+  #       name: RuboCop + google-style (G-RB-001..006)
+  #       entry: bundle exec rubocop --force-exclusion
+  #       language: system
+  #       files: '\.rb$'

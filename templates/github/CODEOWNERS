@@ -1,0 +1,23 @@
+# Профиль Google · CODEOWNERS для GitHub.
+# Практика, выведенная из репозиториев: файл есть в 9 из 24 репозиториев
+# Google; образец структуры - googleapis/release-please (команда-владелец
+# по умолчанию и отдельные владельцы путей). Письменного правила Google нет.
+# Правило G-REPO-020 в docs/git/repository.md.
+#
+# Куда положить: .github/CODEOWNERS (GitHub ищет файл в .github/, затем
+# в корне, затем в docs/ и берёт первый найденный).
+# Как это работает:
+#   - действует ПОСЛЕДНЕЕ совпавшее правило, поэтому общее правило стоит первым;
+#   - владельцу нужен доступ write к репозиторию;
+#   - одобрение владельца становится обязательным только при включённой
+#     настройке ветки «Require review from Code Owners».
+# Замените <ORG> и имена команд. Строки с незаменёнными <...> GitHub пропустит.
+
+# Default owners for everything in the repository.
+*                 @<ORG>/<MAINTAINERS_TEAM>
+
+# Documentation.
+/docs/            @<ORG>/<DOCS_TEAM>
+
+# CI, templates, and this file.
+/.github/         @<ORG>/<INFRA_TEAM>

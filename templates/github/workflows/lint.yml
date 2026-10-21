@@ -1,0 +1,257 @@
+# =============================================================================
+# Профиль Google · GitHub Actions · проверки стиля (workflow «lint»)
+# Данные актуальны на 2026-10-09. Скопируйте в .github/workflows/lint.yml.
+#
+# Статус: эталонного workflow Google не публикует; в выборке из 24 открытых
+# репозиториев Google lint в Actions запускают 13, проверку формата отдельным
+# шагом - 5, clang-format или clang-tidy - ни один (проверки идут во внутреннем
+# presubmit). Файл - сборка профиля по правилам docs/ (не Google), а оформление
+# workflow следует письменным требованиям Google OSPO для GitHub
+# (https://opensource.google/documentation/reference/github/services, G-REPO-024):
+#   - стороннее действие закреплено на коммит (SHA), версия - в комментарии;
+#   - `permissions` сужены (`contents: read` на уровне workflow);
+#   - у каждого задания `timeout-minutes`; `concurrency` отменяет устаревшие
+#     запуски; у checkout `persist-credentials: false` (образец googleapis).
+#
+# Задания: pre-commit (гигиена и секреты), python, cpp, web, license-headers,
+# notebooks, commit-messages. Удалите задания для языков, которых нет в проекте,
+# и назовите обязательными статусами в защите ветки те, что остались
+# (G-REPO-022, G-BR-011). Тесты - отдельный workflow `test` (G-PY-065).
+# Заполнители: <COPYRIGHT_HOLDER>, PACKAGE_DIR.
+#
+# Версии (SHA тегов сверены `git ls-remote --tags` 2026-10-09):
+#   actions/checkout v7.0.1, actions/setup-python v7.0.0, actions/setup-node v7.1.0,
+#   actions/setup-go v7.0.0, pre-commit/action v3.0.1; инструменты - как в configs/.
+# Не запускалось: нет доступа к GitHub Actions из среды сборки. Проверено
+# локально: разбор YAML (PyYAML 6.0.3), существование тегов действий, команды
+# python/cpp-шагов - те же, что проверены для configs/.
+# =============================================================================
+name: lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # merge_group:            # раскомментируйте, если включена merge queue (G-BR-011)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PACKAGE_DIR: src          # каталог пакета Python (pylint и mypy получают пути явно)
+  PYTHON_VERSION: "3.12"    # минимальная версия для pyink, pylint 4.1.2, pytest 9.1.1 - 3.10
+  NODE_VERSION: "24"        # Angular 22, ESLint 10, Stylelint 17, commitlint 21
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Хуки общей гигиены и сканер секретов из configs/.pre-commit-config.yaml по
+  # всему дереву (так делают 5 из 6 репозиториев Google с pre-commit-конфигом).
+  # Хуки, у которых есть собственные задания ниже, пропускаются через SKIP.
+  # G-MLOPS-004, G-REPO-009, G-PY-005, G-DOC-009.
+  # ---------------------------------------------------------------------------
+  pre-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable         # нужен хукам gitleaks и addlicense (language: golang)
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          SKIP: pyink,isort,ruff-check,mypy,pylint,clang-format,addlicense,nbstripout,jupytext,commitlint
+
+  # ---------------------------------------------------------------------------
+  # Python - вариант A профиля (configs/python/pyproject.toml). G-PY-001 … G-PY-065.
+  # ---------------------------------------------------------------------------
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install tools (pinned)
+        run: |
+          python -m pip install "pyink==26.5.1" "isort==9.0.2" "pylint==4.1.2" \
+              "ruff==0.16.8" "mypy==2.3.1"
+          # зависимости проекта нужны pylint и mypy; подставьте свою команду:
+          # python -m pip install -e . или pip install -r requirements.txt
+      - name: Google pylintrc (G-PY-048; Apache-2.0, в профиль не скопирован)
+        run: test -f pylintrc || curl -fsSLO https://google.github.io/styleguide/pylintrc
+      - name: pyink --check (G-PY-001)
+        run: pyink --check --diff .
+      - name: isort --check-only (G-PY-022)
+        run: isort --check-only --diff .
+      # Вариант B: вместо двух шагов выше - `ruff format --check .`
+      - name: ruff check
+        run: ruff check .
+      - name: pylint (G-PY-048)
+        run: pylint --rcfile=pylintrc --disable=consider-using-f-string "$PACKAGE_DIR"
+      - name: mypy (G-PY-042)
+        run: mypy "$PACKAGE_DIR"
+
+  # ---------------------------------------------------------------------------
+  # C++ - clang-format и clang-tidy 18.1.3 (та же версия, что в configs/cpp/).
+  # clang-tidy нужен compile_commands.json: подставьте свою команду конфигурации
+  # (CMake ниже - пример). В PR проверяются только изменённые *.cc; на main - все.
+  # G-CPP-001 … G-CPP-073.
+  # ---------------------------------------------------------------------------
+  cpp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install LLVM 18 (Ubuntu 24.04)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-format-18 clang-tidy-18 clang-18 cmake
+      - name: clang-format --dry-run -Werror (G-CPP-001 … G-CPP-006, G-CPP-022)
+        run: |
+          git ls-files '*.cc' '*.h' '*.inc' ':!:third_party/**' \
+            | xargs -r clang-format-18 --style=file --dry-run -Werror
+      - name: Configure (compile_commands.json)
+        run: |
+          cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+                -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_EXTENSIONS=OFF \
+                -DCMAKE_CXX_COMPILER=clang++-18
+      - name: clang-tidy (G-CPP-005, G-CPP-011 … G-CPP-017, G-CPP-040, G-CPP-042 и др.)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            files=$(git diff --name-only --diff-filter=d "origin/$BASE_REF"... -- '*.cc' ':!:third_party/**')
+          else
+            files=$(git ls-files '*.cc' ':!:third_party/**')
+          fi
+          [ -z "$files" ] && { echo "no C++ sources to check"; exit 0; }
+          echo "$files" | xargs clang-tidy-18 -p build --warnings-as-errors='*'
+      # Необязательно: cpplint 2.0.2 - форк сообщества, не Google. Не запускалось.
+      # - run: pip install cpplint==2.0.2 && cpplint --recursive --linelength=80 --exclude=third_party .
+
+  # ---------------------------------------------------------------------------
+  # Фронтенд - Prettier, ESLint (typescript-eslint, angular-eslint,
+  # eslint-plugin-react-hooks), Stylelint из configs/web/. Запускается только
+  # если в корне есть package-lock.json; для фронтенда в подкаталоге задайте
+  # `defaults.run.working-directory`. G-TS-003, G-NG-*, G-REACT-*, G-CSS-*.
+  # ---------------------------------------------------------------------------
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: lockfile
+        run: test -f package-lock.json && echo "present=true" >> "$GITHUB_OUTPUT" || echo "present=false" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.lockfile.outputs.present == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - if: steps.lockfile.outputs.present == 'true'
+        run: npm ci
+      - name: prettier --check (G-TS-003)
+        if: steps.lockfile.outputs.present == 'true'
+        run: npx prettier --check .
+      - name: eslint (типизированный линтинг - после npm ci, из каталога с tsconfig.json)
+        if: steps.lockfile.outputs.present == 'true'
+        run: npx eslint .
+      - name: stylelint (G-CSS-*)
+        if: steps.lockfile.outputs.present == 'true'
+        run: npx stylelint "**/*.css"
+
+  # ---------------------------------------------------------------------------
+  # Заголовки лицензии - google/addlicense v1.2.0 (письменное правило OSPO;
+  # сами репозитории Google проверяют заголовки своими скриптами или ботом).
+  # `-check` смотрит только наличие слов copyright / SPDX в первых 1000 байтах.
+  # G-REPO-010, G-REPO-015.
+  # ---------------------------------------------------------------------------
+  license-headers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - run: go install github.com/google/addlicense@v1.2.0
+      - run: addlicense -check -c "<COPYRIGHT_HOLDER>" -l apache -ignore "third_party/**" .
+
+  # ---------------------------------------------------------------------------
+  # Ноутбуки: в изменённых *.ipynb вне docs/ нет output-ячеек (G-NB-001).
+  # Логика - по заданию outputs-removed из tensorflow/docs. В docs/ выводы
+  # допустимы (документационные ноутбуки, G-NB-009).
+  # ---------------------------------------------------------------------------
+  notebooks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          status=0
+          while IFS= read -r nb; do
+            case "$nb" in docs/*) continue ;; esac
+            if grep --quiet '"output_type":' "$nb"; then
+              echo "Remove output cells from: $nb" >&2
+              status=1
+            fi
+          done < <(git diff --name-only --diff-filter=d "origin/$BASE_REF"... -- '*.ipynb')
+          exit "$status"
+
+  # ---------------------------------------------------------------------------
+  # Сообщения коммитов - commitlint 21.2.3 (не Google). Конфиг
+  # commitlint.config.mjs - в docs/git/commits.md (вариант A: предложение без
+  # префикса, 72 символа; вариант B: Conventional Commits). Заголовок PR
+  # проверяется потому, что при squash-слиянии он становится заголовком коммита
+  # (G-GIT-015); заголовок передаётся через переменную окружения, а не
+  # подстановкой в команду. G-GIT-003 … G-GIT-005, G-GIT-007, G-GIT-013.
+  # ---------------------------------------------------------------------------
+  commit-messages:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm install --no-save @commitlint/cli@21.2.3 @commitlint/config-conventional@21.2.3
+      - name: Lint PR title (becomes the squash commit subject)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
+      - name: Lint commits of the PR
+        # При обязательном squash-слиянии шаг можно сделать необязательным:
+        # continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose

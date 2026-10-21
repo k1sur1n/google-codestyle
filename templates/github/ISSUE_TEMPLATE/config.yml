@@ -1,0 +1,15 @@
+# Профиль Google · настройка выбора шаблона issue на GitHub.
+# Практика, выведенная из репозиториев: пустые issue отключены и вопросы
+# отправлены в обсуждения в 4 из 24 репозиториев (abseil-cpp, googletest,
+# jax, tensorflow). В google/new-project этого файла нет.
+# Правило G-REPO-007 в docs/git/repository.md.
+# Куда положить: .github/ISSUE_TEMPLATE/config.yml в ветке по умолчанию.
+# Замените <...> на свои адреса. В GitLab аналога этому файлу нет.
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: <DISCUSSIONS_OR_FORUM_URL>
+    about: Ask usage questions here. Issues are for bugs and feature requests.
+  - name: Security vulnerabilities
+    url: <SECURITY_POLICY_URL>
+    about: Don't report vulnerabilities in public issues. See the policy.

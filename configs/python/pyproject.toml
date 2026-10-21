@@ -1,0 +1,210 @@
+# =============================================================================
+# Профиль Google · Python · фрагмент pyproject.toml
+# Данные актуальны на 2026-10-09. Правила: ../../docs/languages/python.md (G-PY-001…G-PY-065).
+#
+# Как пользоваться: скопируйте секции [tool.*] в pyproject.toml своего проекта.
+# Источник истины - текст Google Python Style Guide (редакция 2026-09-10); конфиг - 
+# приближение к нему, известные расхождения перечислены в python.md («Гайд против
+# инструментов»).
+#
+# Основной набор (вариант A) - все пять инструментов работают вместе:
+#   pyink - форматтер Google (назван в гайде наряду с Black);
+#   isort - порядок импортов, profile = "google" («не Google»);
+#   pylint - с pylintrc из google/styleguide (требование гайда; файл скачивается отдельно);
+#   ruff - только линтер («не Google»): закрывает то, чего нет в Google pylintrc
+#            (докстринги, относительные импорты, формат TODO, современные аннотации);
+#   mypy - проверка типов («не Google»; гайд называет pytype, он в архиве с 2026-09-03).
+# Вариант B («не Google»): ruff format + ruff check вместо pyink и isort. Три правки
+# для него отмечены ниже словами «Вариант B».
+#
+# Версии, под которые написан файл:
+#   pyink   26.5.1  (2026-08-25, форк Black 26.5.1; Python >= 3.10)
+#   isort   9.0.2
+#   pylint  4.1.2   (2026-10-02; Python >= 3.10) - настраивается файлом pylintrc, не здесь
+#   ruff    0.16.8
+#   mypy    2.3.1
+#   pytest  9.1.1   (Python >= 3.10)
+#   pyright 1.1.414 (закомментированная альтернатива mypy)
+#
+# Проверено локально (2026-10-09, Python 3.13):
+#   - файл разбирается tomllib;
+#   - [tool.ruff*]: `ruff check --config <файл> --show-settings` на ruff 0.16.8 без ошибок;
+#     образец «хорошо» - 0 замечаний, образец «плохо» - срабатывают коды, названные
+#     в python.md; вариант B (с правками) - `ruff format --check` принимает образец;
+#   - [tool.mypy]: mypy 2.3.1 принимает секцию; `def f(a: str = None)` и голый `list`
+#     в аннотации дают ошибки;
+#   - [tool.pytest.ini_options]: pytest 9.1.1 собирает `*_test.py` и `test_*.py`,
+#     предупреждение внутри теста превращается в ошибку;
+#   - опции, которые pyink наследует от Black (line-length, extend-exclude), проверены
+#     на black 26.5.1 через временную секцию [tool.black] с теми же значениями;
+#   - закомментированный блок [tool.pyright] проверен на pyright 1.1.414.
+# Не запускалось (реестр пакетов недоступен из среды сборки): pyink, isort, pylint.
+#   Имена их опций сверены с первоисточниками: pyink - README и pyproject.toml
+#   репозитория google/pyink (HEAD 2026-10-08); isort - исходник профиля google
+#   (isort/profiles.py, HEAD 2026-10-05); pylintrc - файл из google/styleguide.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Форматтер: pyink 26.5.1 (Google; README: «not an officially supported Google product»)
+# -----------------------------------------------------------------------------
+# Готового «Google-пресета» у pyink нет: значения выставлены по тексту гайда.
+# НЕ запускалось локально. Вариант B: удалите эту секцию (форматирует ruff format).
+[tool.pyink]
+line-length = 80                    # гайд: 80 (G-PY-002); по умолчанию у pyink и Black - 88
+pyink-indentation = 4               # гайд и pylintrc: 4 (G-PY-004). Внутренний стиль Google
+                                    # и 8 из 12 его открытых Python-репозиториев - 2 пробела;
+                                    # профиль это расхождение не перенимает.
+pyink-use-majority-quotes = true    # гайд: кавычки единообразны в файле (G-PY-010); pyink берёт
+                                    # преобладающий в файле вид, Black всегда ставит двойные
+extend-exclude = "third_party/"     # чужой код не форматируем (опция Black; регулярное выражение)
+# preview = true                    # так в google/flax; preview-стиль меняется от релиза к релизу
+
+
+# -----------------------------------------------------------------------------
+# Импорты: isort 9.0.2 - «не Google» (PyCQA)
+# -----------------------------------------------------------------------------
+# Профиль google: force_single_line, force_sort_within_sections, lexicographical,
+# order_by_type = false, group_by_package, line_length = 1000 (длинный импорт не
+# переносится - как у pyink), single_line_exclusions = collections.abc, six.moves,
+# typing, typing_extensions. Реализует G-PY-021, G-PY-022. НЕ запускалось локально.
+# Вариант B: удалите эту секцию (порядок импортов проверяет правило I в ruff).
+[tool.isort]
+profile = "google"
+src_paths = ["src"]                 # где лежит ваш пакет; уберите, если пакет в корне
+extend_skip = ["third_party"]
+
+
+# -----------------------------------------------------------------------------
+# Линтер гайда: pylint 4.1.2 + pylintrc из google/styleguide (G-PY-048)
+# -----------------------------------------------------------------------------
+# pylintrc (Apache-2.0, последняя правка 2025-02-21) в профиль не копируется - 
+# скачайте его в корень проекта:
+#   curl -fsSLO https://google.github.io/styleguide/pylintrc
+#   pylint --rcfile=pylintrc --disable=consider-using-f-string src/
+# --disable=consider-using-f-string: C0209 противоречит гайду, который разрешает
+# `%` и `.format()` (G-PY-040). Если указан --rcfile, pylint не читает секции
+# [tool.pylint.*] из pyproject.toml, поэтому здесь их нет. НЕ запускалось локально.
+
+
+# -----------------------------------------------------------------------------
+# Дополняющий линтер: ruff 0.16.8 - «не Google» (гайд ruff не упоминает)
+# -----------------------------------------------------------------------------
+# Проверено локально на ruff 0.16.8.
+[tool.ruff]
+line-length = 80
+indent-width = 4
+target-version = "py312"            # примеры гайда используют typing.override (3.12+);
+                                    # поставьте минимальную версию Python вашего проекта
+extend-exclude = ["third_party"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",            # pycodestyle/pyflakes: E401, E402, E702, E703, E711, E712, E722, W191 …
+  "N",                      # именование (G-PY-011…G-PY-013), N818 - суффикс Error (G-PY-035)
+  "D",                      # докстринги (G-PY-026…G-PY-031); набор сужает convention = "google"
+  "B006", "B008",           # изменяемые и вычисляемые значения по умолчанию (G-PY-051)
+  "BLE001",                 # except Exception (G-PY-036)
+  "G",                      # логирование с %-шаблоном (G-PY-039)
+  "TID252",                 # запрет относительных импортов (G-PY-018)
+  "UP006", "UP007", "UP035", "UP045", "RUF013",   # встроенные дженерики, явный X | None
+                                                  # (G-PY-043, G-PY-044)
+  "TD004", "TD005", "TD007",                      # формат TODO: двоеточие, описание, пробел
+                                                  # (G-PY-034)
+  "C417",                   # map()/filter() с lambda → генераторное выражение (G-PY-054)
+  "SIM115",                 # открытие файла без with (G-PY-041)
+  "SIM118",                 # `key in d.keys()` (G-PY-060)
+  "PLC0415",                # импорт не на верхнем уровне файла (G-PY-020)
+  "PLC1802",                # len(seq) как условие (G-PY-052)
+  "PLW0603",                # оператор global (G-PY-056); в Google pylintrc global-statement
+                            # отключён, здесь включён: гайд просит объяснять такие места
+  "RUF100",                 # неиспользуемые noqa
+]
+ignore = [
+  "E501",                   # длину строки проверяет pylint C0301: его pylintrc знает исключения
+                            # гайда (длинные импорты, URL). Вариант B: уберите эту строку.
+  "E701",                   # гайд разрешает `if foo: bar(foo)` (G-PY-009)
+  "D105",                   # докстринги magic-методов гайд не требует
+]
+# Вариант B: раскомментируйте - ruff возьмёт на себя порядок импортов и кавычки.
+# extend-select = ["I", "Q000", "Q001", "Q002", "Q003"]
+#
+# Не включать (противоречат гайду или форматтеру):
+#   I001 и E501 вместе с pyink - ruff переносит длинный импорт в скобки, а гайд
+#       выводит длинные импорты из-под лимита и pyink их не трогает (G-PY-002);
+#   Q000 вместе с pyink-use-majority-quotes - ruff требует один вид кавычек на проект;
+#   ICN001 - требует псевдоним (`import numpy as np`) даже там, где гайд его не требует;
+#   TD002 - требует автора в TODO; TD003 - не принимает ссылку без схемы, как в примере гайда;
+#   TC001-TC003 - толкают импорты под TYPE_CHECKING (G-PY-023);
+#   ANN204 - аннотация возврата __init__ (гайд разрешает её не писать);
+#   UP040 - PEP 695 `type X = …` вместо TypeAlias (G-PY-046);
+#   S101 - флагует любой assert, а гайд запрещает только assert вместо проверки (G-PY-037);
+#   COM812 - конфликтует с форматтером.
+# Фреймворки («не Google»): для Django добавьте в select "DJ", для FastAPI - "FAST"
+# (см. ../../docs/frameworks/django.md и fastapi.md).
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"       # отключает D203, D204, D213, D215, D400, D401, D404, D406-D409, D413
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 80         # W505: строки комментариев и докстрингов
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+"*_test.py" = ["D"]         # G-PY-063: докстринги в тестах не обязательны
+"test_*.py" = ["D"]
+
+# Следующие три секции работают только в варианте B (ruff format, правила I и Q).
+[tool.ruff.format]
+quote-style = "single"      # гайд требует только единообразия в файле; ruff не умеет
+                            # «по большинству», поэтому выбран один вид на проект.
+                            # Замените на "double" вместе с inline-quotes ниже.
+indent-style = "space"
+
+[tool.ruff.lint.isort]      # приближение к isort profile = "google"
+force-single-line = true
+force-sort-within-sections = true
+order-by-type = false
+single-line-exclusions = ["collections.abc", "typing", "typing_extensions"]
+# known-first-party = ["myproject"]   # если ruff не находит ваш пакет сам
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+multiline-quotes = "double"
+docstring-quotes = "double"
+
+
+# -----------------------------------------------------------------------------
+# Проверка типов: mypy 2.3.1 - «не Google»
+# -----------------------------------------------------------------------------
+# Гайд называет pytype, но репозиторий google/pytype в архиве с 2026-09-03, последняя
+# поддерживаемая версия Python - 3.12 (G-PY-042). Проверено локально на mypy 2.3.1.
+[tool.mypy]
+python_version = "3.12"          # поставьте минимальную версию Python вашего проекта
+no_implicit_optional = true      # значение по умолчанию, записано явно: G-PY-043
+disallow_any_generics = true     # G-PY-045: параметры дженериков указываются
+warn_unused_ignores = true
+check_untyped_defs = true
+exclude = ["third_party/"]
+# disallow_untyped_defs не включён намеренно: гайд требует аннотировать публичные API,
+# а не каждую функцию (G-PY-042).
+
+# Альтернатива mypy - pyright 1.1.414 («не Google»; обе названы в FAQ pytype как зрелые).
+# Проверено локально: блок принимается, те же ошибки на тех же примерах.
+# [tool.pyright]
+# pythonVersion = "3.12"
+# typeCheckingMode = "standard"
+# reportMissingTypeArgument = "error"     # G-PY-045
+# exclude = ["third_party"]
+
+
+# -----------------------------------------------------------------------------
+# Тесты: pytest 9.1.1
+# -----------------------------------------------------------------------------
+# Гайд раннер не предписывает. pytest и `filterwarnings = ["error", …]` - практика
+# открытых репозиториев Google (flax, jax, keras, pyink): G-PY-065. Проверено локально.
+[tool.pytest.ini_options]
+python_files = ["*_test.py", "test_*.py"]   # G-PY-061: тесты рядом с кодом, foo_test.py
+filterwarnings = ["error"]

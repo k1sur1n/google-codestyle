@@ -1,0 +1,31 @@
+# Перенос на GitLab - не Google. Профиль Google · CODEOWNERS для GitLab.
+# Google не публикует правил для GitLab; файл переносит практику GitHub-first
+# репозиториев Google (CODEOWNERS - в 9 из 24, образец - googleapis).
+# Правило G-REPO-020 в docs/git/repository.md.
+#
+# Куда положить: CODEOWNERS в корне, в docs/ или в .gitlab/ (GitLab проверяет
+# эти места в таком порядке и берёт первый найденный файл).
+# Нужен тариф Premium или Ultimate. Одобрение владельца становится обязательным,
+# когда для защищённой ветки включено «Require approval from code owners».
+#
+# Отличия от CODEOWNERS на GitHub:
+#   - правила сгруппированы в секции [Имя]; секции проверяются независимо,
+#     внутри секции действует последнее совпавшее правило;
+#   - владельцев по умолчанию можно указать в заголовке секции;
+#   - ^[Имя] - необязательная секция: одобрение желательно, но не блокирует MR;
+#   - [Имя][2] - секция требует двух одобрений;
+#   - владелец - @user, @group/subgroup или роль (@@maintainer);
+#   - строка с «!» исключает путь из секции.
+# Требуемое число одобрений вне CODEOWNERS задают approval rules (Premium).
+# Замените <GROUP> и имена подгрупп.
+
+[Default] @<GROUP>/<MAINTAINERS>
+*
+
+^[Documentation] @<GROUP>/<DOCS>
+/docs/
+
+[CI and repository settings] @<GROUP>/<INFRA>
+/.gitlab/
+/.gitlab-ci.yml
+/CODEOWNERS

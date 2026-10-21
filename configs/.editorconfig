@@ -1,0 +1,142 @@
+# =============================================================================
+# Профиль Google · .editorconfig
+# Данные актуальны на 2026-10-09. Скопируйте файл в корень репозитория.
+#
+# Статус: у Google письменного правила об .editorconfig нет, файл есть только в
+# 4 из 24 измеренных открытых репозиториев (microservices-demo, flatbuffers, yapf,
+# jax) - это сборка профиля (не Google). Числа в секциях взяты из правил профиля
+# (ID в комментариях); .editorconfig лишь подсказывает редактору, окончательный
+# формат задают форматтеры из configs/ (pyink, clang-format, Prettier,
+# google-java-format и др.) - их настройки имеют приоритет.
+#
+# Спецификация EditorConfig: https://editorconfig.org/ (свойства charset,
+# end_of_line, indent_style, indent_size, insert_final_newline,
+# trim_trailing_whitespace, root); max_line_length - из списка свойств в вики
+# проекта (https://github.com/editorconfig/editorconfig/wiki/EditorConfig-Properties),
+# его поддерживает не каждый редактор; значение `unset` снимает лимит. Свойства,
+# которых нет в спецификации (quote_type, ktlint_*, csharp_*, dotnet_*), читают
+# только названные инструменты.
+#
+# Проверено локально (2026-10-09): разбор файла парсером INI (Python 3.13,
+# configparser, без интерполяции); имена свойств сверены с editorconfig.org и
+# вики EditorConfig, остальные - с интеграционными заметками по ktlint, dotnet
+# format и Angular CLI. Не запускалось: плагины EditorConfig для редакторов.
+# =============================================================================
+
+root = true
+
+# --- Общие значения профиля (не правило Google) ------------------------------
+# Гайды кодировку, конец строки и завершающий перевод строки не задают
+# (в pylintrc expected-line-ending-format= пуст; пресет Google в clang-format
+# InsertNewlineAtEOF не включает). UTF-8 без BOM - G-CPP-008, G-CSS-003.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# --- Python - G-PY-002 (80 колонок), G-PY-004 (4 пробела, без табов), G-PY-005
+[*.{py,pyi}]
+indent_style = space
+indent_size = 4
+max_line_length = 80
+
+# --- C++ - G-CPP-001 (80 колонок), G-CPP-002 (2 пробела), G-CPP-010 (.cc/.h/.inc)
+# Отступ при переносе (4) и отступ `public:` (1) .editorconfig выразить не может - 
+# это делает clang-format (configs/cpp/.clang-format).
+[*.{cc,h,inc}]
+indent_style = space
+indent_size = 2
+max_line_length = 80
+
+# --- TypeScript / JavaScript - G-TS-003.
+# max_line_length должен совпадать с printWidth в configs/web/.prettierrc.json
+# (сейчас 100 - значение Angular CLI; без Angular удалите printWidth и поставьте
+# здесь 80 - число JS-гайда и gts). quote_type читает Angular CLI / Prettier.
+[*.{ts,tsx,js,mjs,cjs}]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+quote_type = single
+
+# --- HTML, CSS, JSON - G-CSS-001 (2 пробела), G-CSS-003 (UTF-8); формат - Prettier
+[*.{html,css,scss,json}]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# --- Java - G-JAVA-001, G-JAVA-002 (формат задаёт google-java-format)
+[*.java]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# --- Kotlin - G-KT-001, G-KT-002; ktlint_code_style читает ktlint (не Google)
+[*.{kt,kts}]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+ktlint_code_style = android_studio
+
+# --- Go - G-GO-001 (gofmt: табуляция), G-GO-002 (лимита длины строки нет:
+# `unset` снимает значение, если оно задано выше или в родительском файле)
+[*.go]
+indent_style = tab
+max_line_length = unset
+
+# --- C# - G-CS-001, G-CS-002, G-CS-006, G-CS-007; опции csharp_* и dotnet_*
+# читает dotnet format (не Google); max_line_length dotnet format не применяет.
+[*.cs]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+csharp_new_line_before_open_brace = none
+csharp_new_line_before_else = false
+csharp_prefer_braces = true
+csharp_using_directive_placement = outside_namespace
+dotnet_sort_system_directives_first = true
+csharp_preferred_modifier_order = public,protected,internal,private,new,abstract,virtual,override,sealed,static,readonly,extern,unsafe,volatile,async
+
+# --- Rust - G-RS-002 (умолчания rustfmt; не Google)
+[*.rs]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# --- PHP - G-PHP-002, G-PHP-003 (PER Coding Style 3.1; не Google)
+[*.php]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+# --- Ruby - G-RB-002, G-RB-006 (gem google-style: 120 колонок)
+[{*.rb,Gemfile,Rakefile}]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+# --- Shell - Google Shell Style Guide: 2 пробела, 80 колонок
+[*.sh]
+indent_style = space
+indent_size = 2
+max_line_length = 80
+
+# --- Bazel (BUILD, *.bzl): секции нет - формат целиком задаёт buildifier
+# («BUILD file formatting must match the output of buildifier»; жёсткого
+# лимита длины строки гайд не ставит).
+
+# --- Markdown - G-DOC-006 (80 колонок), docguide: хвостовые пробелы запрещены,
+# вложенные списки - отступ 4 пробела
+[*.md]
+indent_style = space
+indent_size = 4
+max_line_length = 80
+
+# --- YAML (workflows, pre-commit, GitLab CI) - общее значение профиля
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# --- Makefile требует табуляцию
+[Makefile]
+indent_style = tab

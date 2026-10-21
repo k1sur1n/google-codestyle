@@ -1,0 +1,144 @@
+---
+# =============================================================================
+# Профиль Google · C++ · .clang-tidy
+# Данные актуальны на 2026-10-09. Правила: ../../docs/languages/cpp.md (G-CPP-001…G-CPP-073).
+#
+# Как пользоваться: скопируйте файл в корень репозитория под именем .clang-tidy.
+# clang-tidy нужен compile_commands.json (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON;
+# Bazel: отдельный генератор) либо флаги после `--`, например:
+#   clang-tidy src/foo.cc -- -std=c++20 -fno-exceptions -Iinclude
+#
+# Что это: проверки семейства google-* из LLVM плюс поимённо перечисленные проверки других
+# семейств, которые выражают конкретные правила Google C++ Style Guide (редакция 2026-09-29).
+# Официального «Google-пресета» для clang-tidy нет, гайд clang-tidy не упоминает:
+# набор составлен нами по тексту гайда (не Google), образец - .clang-tidy проекта
+# googleapis/google-cloud-cpp. Целые семейства modernize-*/misc-*/readability-* не включаются
+# намеренно: часть их проверок требует обратного гайду (modernize-use-trailing-return-type,
+# modernize-use-auto, misc-const-correctness, misc-use-anonymous-namespace).
+#
+# Версии:
+#   clang-tidy 18.1.3 - проверено локально (см. ниже); в этой версии 15 проверок google-*
+#   для C++ и GoogleTest (ещё 4 - для Objective-C, здесь отключены).
+#   clang-tidy 22.1-23.1 - не запускалось (в среде сборки только 18.1.3). По Release Notes:
+#   в 22.1.0 через маску google-* добавится google-runtime-float (long double), а
+#   google-readability-todo начнёт принимать и форму `TODO: ссылка - текст`.
+#
+# Проверено локально (2026-10-09, clang-tidy 18.1.3):
+#   - `clang-tidy --verify-config --config-file=<этот файл>` → «No config errors detected.»;
+#   - образцы в стиле гайда (заголовок, .cc и тест на макросах TEST/TEST_F) - 0 замечаний;
+#   - образец с нарушениями - 55 замечаний от 24 проверок (using namespace в заголовке,
+#     конструктор без explicit, C-приведения, long/short, NULL, имена не по гайду,
+#     TODO без контекста, `_` в именах тестов, вызов виртуальной функции в конструкторе и др.).
+# =============================================================================
+Checks: >
+  -*,
+  google-*,
+  -google-objc-*,
+  abseil-no-internal-dependencies,
+  abseil-no-namespace,
+  bugprone-argument-comment,
+  bugprone-suspicious-semicolon,
+  bugprone-switch-missing-default-case,
+  cert-dcl58-cpp,
+  clang-analyzer-optin.cplusplus.VirtualCall,
+  misc-definitions-in-headers,
+  misc-unused-using-decls,
+  modernize-replace-auto-ptr,
+  modernize-use-nullptr,
+  modernize-use-override,
+  performance-noexcept-move-constructor,
+  readability-avoid-const-params-in-decls,
+  readability-identifier-naming,
+  readability-isolate-declaration,
+  readability-operators-representation
+
+# Необязательные проверки (не включены, добавляйте осознанно):
+#   fuchsia-statically-constructed-objects - G-CPP-051: глобальные объекты с динамической
+#     инициализацией; ловит и короткий `const std::string kFoo = "foo";`, который
+#     флаги -Wexit-time-destructors/-Wglobal-constructors в C++20 пропускают.
+#   misc-include-cleaner - G-CPP-020 (include what you use); шумит на системных и
+#     зонтичных заголовках, google-cloud-cpp её отключает.
+#   abseil-unchecked-statusor-access - G-CPP-035; существует только с clang-tidy 22.1.0.
+#
+# Побочный эффект: clang-analyzer-optin.cplusplus.VirtualCall (G-CPP-036) автоматически
+# включает базовые проверки clang-analyzer-core.* (поиск ошибок, не стиль) и замедляет анализ.
+# Исключения гайда для аналогов STL (`swap()`, `begin()`, `value_type`) инструмент не знает:
+# помечайте такие имена `// NOLINT(readability-identifier-naming)`.
+
+# Замечания выдаются и для заголовков проекта. Сузьте выражение до своих каталогов,
+# например '(src|include)/.*', чтобы не проверять сторонний код.
+HeaderFilterRegex: '.*'
+
+# Автоисправления (--fix) форматируются по .clang-format из того же репозитория.
+FormatStyle: file
+
+# В CI запускайте с --warnings-as-errors='*' (или раскомментируйте строку ниже).
+# WarningsAsErrors: '*'
+
+CheckOptions:
+  # G-CPP-040: подсказывать int64_t, а не int64 (умолчание TypeSuffix - пустая строка).
+  google-runtime-int.TypeSuffix: _t
+
+  # G-CPP-006: `&&`, `||`, `!`, `~` вместо and / or / not / compl. Без этих двух опций
+  # проверка ничего не делает.
+  readability-operators-representation.BinaryOperators: '&&;&=;&;|;~;!;!=;||;|=;^;^='
+  readability-operators-representation.OverloadedOperators: '&&;&=;&;|;~;!;!=;||;|=;^;^='
+
+  # --- Именование (G-CPP-011…G-CPP-017) ---------------------------------------
+  # G-CPP-011: типы и концепты - PascalCase.
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.ConceptCase: CamelCase
+  # G-CPP-017: типовые параметры шаблона - как типы (нетиповые не проверяются:
+  # гайд допускает для них и стиль переменных, и стиль констант).
+  readability-identifier-naming.TypeTemplateParameterCase: CamelCase
+  readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
+
+  # G-CPP-014: функции - PascalCase. Для методов дополнительно разрешён snake_case
+  # (аксессоры `count()` / `set_count()`); camelBack вроде `getSize()` отклоняется.
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.MethodIgnoredRegexp: '^[a-z][a-z0-9]*(_[a-z0-9]+)*$'
+
+  # G-CPP-012: переменные и параметры - snake_case; поля класса - с завершающим `_`.
+  # Инструмент различает не struct/class, а public/private: публичные поля проверяются
+  # без суффикса, закрытые и защищённые - с суффиксом. Побочный эффект ClassMemberSuffix:
+  # статическое неконстантное поле структуры тоже должно будет оканчиваться на `_`.
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.PublicMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberSuffix: _
+  readability-identifier-naming.ClassMemberCase: lower_case
+  readability-identifier-naming.ClassMemberSuffix: _
+
+  # G-CPP-013: константы со статическим временем жизни и перечислители - kMixedCase.
+  # Для локальных (автоматических) const/constexpr префикс `k` по гайду необязателен,
+  # поэтому LocalConstantCase свободный, а опции ConstexprVariable* не заданы намеренно:
+  # в clang-tidy 18 они перехватывают и локальные constexpr и дают ложные замечания.
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: k
+  readability-identifier-naming.ClassConstantCase: CamelCase
+  readability-identifier-naming.ClassConstantPrefix: k
+  readability-identifier-naming.StaticConstantCase: CamelCase
+  readability-identifier-naming.StaticConstantPrefix: k
+  readability-identifier-naming.LocalConstantCase: aNy_CasE
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.EnumConstantPrefix: k
+  readability-identifier-naming.ScopedEnumConstantCase: CamelCase
+  readability-identifier-naming.ScopedEnumConstantPrefix: k
+
+  # G-CPP-015: пространства имён - snake_case.
+  readability-identifier-naming.NamespaceCase: lower_case
+
+  # G-CPP-016: макросы - ЗАГЛАВНЫМИ. Защита заголовка `<PROJECT>_<PATH>_<FILE>_H_`
+  # (G-CPP-019) оканчивается на `_`, чего стиль UPPER_CASE не допускает, - отсюда исключение.
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^[A-Z][A-Z0-9_]*_H_$'
+...

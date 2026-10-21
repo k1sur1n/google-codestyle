@@ -1,0 +1,220 @@
+# =============================================================================
+# Профиль Google · GitLab CI · проверки стиля - перенос на GitLab (не Google)
+# Данные актуальны на 2026-10-09. Скопируйте в корень проекта как .gitlab-ci.yml.
+#
+# Статус: Google материалов для GitLab не публикует (в 25 измеренных
+# репозиториях нет ни одного .gitlab-ci.yml); это перенос заданий из
+# templates/github/workflows/lint.yml с теми же командами и версиями
+# инструментов. Правила - docs/; стадии - docs/enforcement.md.
+#
+# Отличия платформ (подробнее - docs/git/repository.md, docs/adoption.md):
+#   - вместо `uses:` с SHA - образы Docker: закрепляйте тег образа (правило Google
+#     о закреплении действий на коммит, G-REPO-024, на GitLab переносится как
+#     «версия образа и include»); теги образов ниже не проверялись - реестр
+#     недоступен из среды сборки;
+#   - вместо `permissions` и `persist-credentials` - настройки токена задания
+#     (CI_JOB_TOKEN; Settings → CI/CD → Token Access);
+#   - `timeout-minutes` → `timeout:`; `concurrency` → `interruptible: true`
+#     плюс настройка «Auto-cancel redundant pipelines»;
+#   - `on: pull_request` → `rules` с $CI_PIPELINE_SOURCE == "merge_request_event";
+#     ветка-цель - $CI_MERGE_REQUEST_TARGET_BRANCH_NAME, её нужно явно `git fetch`;
+#   - обязательные проверки → Settings → Merge requests → «Pipelines must
+#     succeed» (G-REPO-022); одобрения владельцев кода - Premium и Ultimate;
+#   - сканер секретов: вместо gitleaks в pre-commit - встроенный шаблон GitLab
+#     `Jobs/Secret-Detection.gitlab-ci.yml` (доступен на всех тарифах; задание
+#     `secret_detection`). Он подключён ниже через `include`.
+#
+# Версии инструментов - как в configs/. Не запускалось: нет доступа к GitLab CI
+# из среды сборки. Проверено локально: разбор YAML (PyYAML 6.0.3); ключевые
+# слова сверены с документацией GitLab CI/CD YAML (stages, image, rules,
+# variables, before_script, script, cache, timeout, interruptible, include).
+# Заполнители: <COPYRIGHT_HOLDER>, PACKAGE_DIR.
+# =============================================================================
+
+stages:
+  - lint
+  - test                      # задание secret_detection из шаблона GitLab идёт в stage test
+
+include:
+  # Сканирование секретов (G-MLOPS-004, G-REPO-009) - встроенный шаблон GitLab.
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+variables:
+  PACKAGE_DIR: src            # каталог пакета Python
+  PIP_CACHE_DIR: $CI_PROJECT_DIR/.cache/pip
+  GIT_DEPTH: "0"              # полная история: нужна diff-проверкам и commitlint
+
+# Общие правила запуска: merge request и основная ветка.
+.on-mr-or-main: &on-mr-or-main
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ---------------------------------------------------------------------------
+# Хуки общей гигиены из configs/.pre-commit-config.yaml по всему дереву.
+# Хуки с собственными заданиями и хуки, которым нужны Go или Node, пропущены
+# через SKIP (секреты проверяет secret_detection, заголовки - license-headers).
+# ---------------------------------------------------------------------------
+pre-commit:
+  stage: lint
+  image: python:3.12
+  <<: *on-mr-or-main
+  timeout: 15m
+  interruptible: true
+  variables:
+    SKIP: gitleaks,addlicense,commitlint,pyink,isort,ruff-check,mypy,pylint,clang-format,nbstripout,jupytext
+    PRE_COMMIT_HOME: $CI_PROJECT_DIR/.cache/pre-commit
+  cache:
+    key: pre-commit-$CI_COMMIT_REF_SLUG
+    paths: [.cache/pre-commit, .cache/pip]
+  before_script:
+    - python -m pip install pre-commit
+  script:
+    - pre-commit run --all-files --show-diff-on-failure
+
+# ---------------------------------------------------------------------------
+# Python - вариант A профиля (configs/python/pyproject.toml). G-PY-001 … G-PY-065.
+# ---------------------------------------------------------------------------
+python:
+  stage: lint
+  image: python:3.12          # pyink, pylint 4.1.2, pytest 9.1.1 требуют Python >= 3.10
+  <<: *on-mr-or-main
+  timeout: 20m
+  interruptible: true
+  cache:
+    key: pip-$CI_COMMIT_REF_SLUG
+    paths: [.cache/pip, .mypy_cache, .ruff_cache]
+  before_script:
+    - python -m pip install "pyink==26.5.1" "isort==9.0.2" "pylint==4.1.2" "ruff==0.16.8" "mypy==2.3.1"
+    # зависимости проекта нужны pylint и mypy - подставьте свою команду:
+    # - python -m pip install -e .
+    - test -f pylintrc || curl -fsSLO https://google.github.io/styleguide/pylintrc   # G-PY-048
+  script:
+    - pyink --check --diff .                                   # G-PY-001
+    - isort --check-only --diff .                              # G-PY-022
+    # Вариант B: вместо двух команд выше - ruff format --check .
+    - ruff check .
+    - pylint --rcfile=pylintrc --disable=consider-using-f-string "$PACKAGE_DIR"   # G-PY-048
+    - mypy "$PACKAGE_DIR"                                      # G-PY-042
+
+# ---------------------------------------------------------------------------
+# C++ - clang-format и clang-tidy 18.1.3 (версия configs/cpp/). G-CPP-*.
+# В MR проверяются только изменённые *.cc, на основной ветке - все.
+# ---------------------------------------------------------------------------
+cpp:
+  stage: lint
+  image: ubuntu:24.04
+  <<: *on-mr-or-main
+  timeout: 30m
+  interruptible: true
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends git clang-format-18 clang-tidy-18 clang-18 cmake
+  script:
+    - git ls-files '*.cc' '*.h' '*.inc' ':!:third_party/**' | xargs -r clang-format-18 --style=file --dry-run -Werror
+    - cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_EXTENSIONS=OFF -DCMAKE_CXX_COMPILER=clang++-18
+    - |
+      if [ -n "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" ]; then
+        git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        files=$(git diff --name-only --diff-filter=d "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"... -- '*.cc' ':!:third_party/**')
+      else
+        files=$(git ls-files '*.cc' ':!:third_party/**')
+      fi
+      [ -z "$files" ] && { echo "no C++ sources to check"; exit 0; }
+      echo "$files" | xargs clang-tidy-18 -p build --warnings-as-errors='*'
+
+# ---------------------------------------------------------------------------
+# Фронтенд - Prettier, ESLint, Stylelint из configs/web/. Запускается только
+# при изменении веб-файлов; для фронтенда в подкаталоге добавьте `cd`.
+# ---------------------------------------------------------------------------
+web:
+  stage: lint
+  image: node:24
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.mjs"
+        - "**/*.cjs"
+        - "**/*.html"
+        - "**/*.css"
+        - "**/*.json"
+        - package.json
+        - package-lock.json
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  timeout: 15m
+  interruptible: true
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm]
+  before_script:
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npx prettier --check .          # G-TS-003
+    - npx eslint .                    # typescript-eslint, angular-eslint, react-hooks
+    - npx stylelint "**/*.css"        # G-CSS-*
+
+# ---------------------------------------------------------------------------
+# Заголовки лицензии - google/addlicense v1.2.0. G-REPO-010, G-REPO-015.
+# ---------------------------------------------------------------------------
+license-headers:
+  stage: lint
+  image: golang:1.24
+  <<: *on-mr-or-main
+  timeout: 10m
+  interruptible: true
+  before_script:
+    - go install github.com/google/addlicense@v1.2.0
+  script:
+    - addlicense -check -c "<COPYRIGHT_HOLDER>" -l apache -ignore "third_party/**" .
+
+# ---------------------------------------------------------------------------
+# Ноутбуки: в изменённых *.ipynb вне docs/ нет output-ячеек (G-NB-001).
+# ---------------------------------------------------------------------------
+notebooks:
+  stage: lint
+  image: ubuntu:24.04
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - "**/*.ipynb"
+  timeout: 5m
+  interruptible: true
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends git
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - |
+      status=0
+      while IFS= read -r nb; do
+        case "$nb" in docs/*) continue ;; esac
+        if grep --quiet '"output_type":' "$nb"; then
+          echo "Remove output cells from: $nb" >&2
+          status=1
+        fi
+      done < <(git diff --name-only --diff-filter=d "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"... -- '*.ipynb')
+      exit "$status"
+
+# ---------------------------------------------------------------------------
+# Сообщения коммитов - commitlint 21.2.3 (не Google). Конфиг
+# commitlint.config.mjs - в docs/git/commits.md. Заголовок MR проверяется, потому
+# что при squash-слиянии он становится заголовком коммита (G-GIT-015).
+# Серверная альтернатива - push rule «Require expression in commit messages»
+# (Premium и Ultimate). G-GIT-003 … G-GIT-005, G-GIT-007, G-GIT-013.
+# ---------------------------------------------------------------------------
+commit-messages:
+  stage: lint
+  image: node:24-alpine
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  timeout: 5m
+  interruptible: true
+  before_script:
+    - apk add --no-cache git
+    - npm install --no-save @commitlint/cli@21.2.3 @commitlint/config-conventional@21.2.3
+  script:
+    - printf '%s\n' "$CI_MERGE_REQUEST_TITLE" | npx commitlint --verbose
+    - npx commitlint --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to "$CI_COMMIT_SHA" --verbose
